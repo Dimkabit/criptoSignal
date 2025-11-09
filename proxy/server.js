@@ -284,8 +284,8 @@ const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 console.log(`🌐 Base URL: ${BASE_URL}`);
 
 // 🔧 ОГРАНИЧЕНИЕ РАЗМЕРА КЭША
-const MAX_CACHE_SIZE = 50;
-const CACHE_DURATION = 30000;
+const MAX_CACHE_SIZE = 1000;
+const CACHE_DURATION = 60000;
 
 const cache = new Map();
 
@@ -354,22 +354,60 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-// API эндпоинты...
+// Эндпоинт для получения тикеров по символу
 app.get('/api/ticker/:symbol', async (req, res) => {
-    try {
-        const { symbol } = req.params;
-        const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`;
-        const data = await fetchWithCache(url, `ticker_${symbol}`);
-        
-        res.json({ success: true, data, timestamp: new Date().toISOString() });
-    } catch (error) {
-        res.status(500).json({ 
-            success: false, 
-            error: 'Ошибка API',
-            message: error.message 
-        });
-    }
+  try {
+    const { symbol } = req.params;
+    const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`;
+    
+    const data = await fetchWithCache(url, `ticker_${symbol}`);
+    
+    res.json({
+      success: true,
+      data: data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Ошибка Binance API для ${req.params.symbol}:`, error.message);
+    
+    // 🔧 ВОЗВРАЩАЕМ ДЕМО-ДАННЫЕ ПРИ ОШИБКЕ
+    const demoData = generateDemoTickerData(req.params.symbol);
+    res.json({
+      success: true,
+      data: demoData,
+      isDemo: true,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
+
+// 🔧 ФУНКЦИЯ ДЛЯ ГЕНЕРАЦИИ ДЕМО-ДАННЫХ БИНАНС
+function generateDemoTickerData(symbol) {
+  const basePrices = {
+    'BTCUSDT': 45000,
+    'ETHUSDT': 3000,
+    'ADAUSDT': 0.5,
+    'DOTUSDT': 10,
+    'MATICUSDT': 1,
+    'SOLUSDT': 100,
+    'AVAXUSDT': 50,
+    'ATOMUSDT': 15
+  };
+  
+  const basePrice = basePrices[symbol] || 1;
+  const change = (Math.random() - 0.5) * 5; // ±5%
+  const currentPrice = basePrice * (1 + change / 100);
+  
+  return {
+    symbol: symbol,
+    lastPrice: currentPrice.toString(),
+    priceChangePercent: change.toString(),
+    volume: (Math.random() * 1000000 + 100000).toString(),
+    highPrice: (currentPrice * 1.03).toString(),
+    lowPrice: (currentPrice * 0.97).toString(),
+    quoteVolume: (Math.random() * 50000000 + 10000000).toString()
+  };
+}
 
 app.get('/api/history/:symbol', async (req, res) => {
     try {

@@ -547,22 +547,35 @@ class CryptoSignal {
     }
 
     async updateMarketData() {
-        try {
-            // Используем Binance API для получения актуальных данных
-            for (const pair of this.cryptoPairs) {
-                const data = await this.fetchCryptoData(pair.symbol);
-                if (data) {
-                    this.marketData.set(pair.symbol, data);
-                }
-            }
-            
-            this.updateChart();
-            console.log('Рыночные данные обновлены');
-        } catch (error) {
-            console.error('Ошибка обновления данных:', error);
-            this.showNotification('Ошибка получения данных рынка', 'error');
+  try {
+    console.log('🔄 Обновление рыночных данных...');
+    
+    // Используем ваш прокси-сервер вместо прямых запросов
+    for (const pair of this.cryptoPairs) {
+      try {
+        const data = await this.fetchCryptoData(pair.symbol);
+        if (data) {
+          this.marketData.set(pair.symbol, data);
+          
+          // 🔧 ЛОГ ДЕМО-ДАННЫХ
+          if (data.isDemo) {
+            console.log(`📊 Используются демо-данные для ${pair.symbol}`);
+          }
         }
+      } catch (error) {
+        console.error(`❌ Ошибка для ${pair.symbol}:`, error.message);
+        // Продолжаем с другими парами
+      }
     }
+    
+    this.updateChart();
+    console.log('✅ Рыночные данные обновлены');
+    
+  } catch (error) {
+    console.error('❌ Критическая ошибка обновления данных:', error);
+    this.showNotification('Используются демо-данные', 'warning');
+  }
+}
 
 // Замените существующую fetchCryptoData на этот код
 async fetchCryptoData(symbol) {
