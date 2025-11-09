@@ -534,7 +534,11 @@ class CryptoSignal {
 
         // Уведомления
         document.getElementById('notificationBtn').addEventListener('click', () => {
-            this.toggleNotifications();
+            if ('Notification' in window && Notification.permission === 'granted') {
+                this.showNotification('Уведомления уже включены', 'info');
+            } else {
+                document.getElementById('notificationModal').classList.remove('hidden');
+            }
         });
 
         document.getElementById('allowNotifications').addEventListener('click', () => {
@@ -1145,8 +1149,8 @@ async fetchCryptoData(symbol) {
         if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, {
                 body: body,
-                icon: '/favicon.ico',
-                badge: '/favicon.ico'
+                icon: 'favicon.ico',
+                badge: 'favicon.ico'
             });
         }
     }
