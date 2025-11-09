@@ -1141,29 +1141,15 @@ async fetchCryptoData(symbol) {
         document.getElementById('notificationModal').classList.add('hidden');
     }
 
-// Создаем функцию для удобства
-function getNotificationIcon() {
-    return 'data:image/svg+xml;base64,' + btoa(`
-        <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-            <rect width="64" height="64" rx="15" fill="#1f2937"/>
-            <circle cx="32" cy="32" r="18" fill="#f59e0b" stroke="#fbbf24" stroke-width="2"/>
-            <circle cx="32" cy="32" r="14" fill="none" stroke="#fbbf24" stroke-width="1"/>
-            <path d="M24,28 L28,24 L32,26 L36,22 L40,30" 
-                  stroke="#1f2937" stroke-width="2" fill="none" stroke-linecap="round"/>
-        </svg>
-    `);
-}
-
-sendPushNotification(title, body) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-        const icon = getNotificationIcon();
-        new Notification(title, {
-            body: body,
-            icon: icon,
-            badge: icon
-        });
+    sendPushNotification(title, body) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, {
+                body: body,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico'
+            });
+        }
     }
-}
 
     loadSettings() {
         const saved = localStorage.getItem('cryptoSignalSettings');
