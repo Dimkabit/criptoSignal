@@ -447,7 +447,7 @@ const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
 const WebSocket = require('ws');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -462,76 +462,87 @@ if (process.env.NODE_ENV === 'production') {
     console.log('🛠️ Установлен лимит памяти: 512MB');
 }
 
-// 🔧 БАЗА ДАННЫХ SQLite
-const db = new sqlite3.Database(':memory:', (err) => {
-    if (err) {
-        console.error('❌ Ошибка БД:', err.message);
-    } else {
-        console.log('✅ SQLite база данных подключена');
-        initializeDatabase();
-    }
+// 🔧 ПОДКЛЮЧЕНИЕ К POSTGRESQL НА RENDER
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
 });
 
-function initializeDatabase() {
-    // Пользователи
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        name TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+// 🔧 ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+async function initializeDatabase() {
+    try {
+        console.log('🔄 Инициализация базы данных PostgreSQL...');
 
-    // Портфель пользователя
-    db.run(`CREATE TABLE IF NOT EXISTS portfolio (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        name TEXT NOT NULL,
-        amount REAL NOT NULL,
-        buy_price REAL NOT NULL,
-        target_price REAL,
-        stop_loss REAL,
-        buy_date TEXT,
-        notes TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )`);
+        // Пользователи
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                name VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-    // История сигналов
-    db.run(`CREATE TABLE IF NOT EXISTS signals_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        name TEXT NOT NULL,
-        action TEXT NOT NULL,
-        entry_price REAL NOT NULL,
-        target_price REAL,
-        stop_loss REAL,
-        confidence INTEGER,
-        result TEXT DEFAULT 'pending',
-        actual_profit REAL DEFAULT 0,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )`);
+        // Портфель пользователя
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS portfolio (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                symbol VARCHAR(20) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                amount DECIMAL(20,8) NOT NULL,
+                buy_price DECIMAL(20,8) NOT NULL,
+                target_price DECIMAL(20,8),
+                stop_loss DECIMAL(20,8),
+                buy_date DATE,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-    // Торговые сессии
-    db.run(`CREATE TABLE IF NOT EXISTS trading_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        action TEXT NOT NULL,
-        entry_price REAL NOT NULL,
-        exit_price REAL,
-        amount REAL NOT NULL,
-        profit_loss REAL,
-        status TEXT DEFAULT 'active',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        closed_at DATETIME,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )`);
+        // История сигналов
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS signals_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                symbol VARCHAR(20) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                action VARCHAR(10) NOT NULL,
+                entry_price DECIMAL(20,8) NOT NULL,
+                target_price DECIMAL(20,8),
+                stop_loss DECIMAL(20,8),
+                confidence INTEGER,
+                result VARCHAR(20) DEFAULT 'pending',
+                actual_profit DECIMAL(20,8) DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-    console.log('✅ Таблицы базы данных инициализированы');
+        // Торговые сессии
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS trading_sessions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                symbol VARCHAR(20) NOT NULL,
+                action VARCHAR(10) NOT NULL,
+                entry_price DECIMAL(20,8) NOT NULL,
+                exit_price DECIMAL(20,8),
+                amount DECIMAL(20,8) NOT NULL,
+                profit_loss DECIMAL(20,8),
+                status VARCHAR(20) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                closed_at TIMESTAMP
+            )
+        `);
+
+        console.log('✅ PostgreSQL таблицы созданы/проверены');
+    } catch (error) {
+        console.error('❌ Ошибка инициализации БД:', error);
+    }
 }
 
 // 🔧 MIDDLEWARE
@@ -542,6 +553,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
+
+// Логирование запросов
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
 
 // 🔧 АУТЕНТИФИКАЦИЯ
 const authenticateToken = (req, res, next) => {
@@ -561,7 +578,7 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// 🔧 КЭШИРОВАНИЕ
+// 🔧 КЭШИРОВАНИЕ ДЛЯ BINANCE API
 const cache = new Map();
 const CACHE_DURATION = 30000; // 30 секунд
 
@@ -587,7 +604,7 @@ async function fetchWithCache(url, key) {
     }
 }
 
-// 🔧 WebSocket для real-time данных
+// 🔧 WebSocket ДЛЯ REAL-TIME ДАННЫХ
 const wss = new WebSocket.Server({ noServer: true });
 const clients = new Map();
 
@@ -606,8 +623,8 @@ wss.on('connection', (ws, req) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'subscribe') {
-                // Подписка на обновления символов
                 ws.subscriptions = data.symbols || [];
+                console.log(`📡 Клиент ${clientId} подписан на:`, ws.subscriptions);
             }
         } catch (error) {
             console.error('WebSocket message error:', error);
@@ -618,6 +635,11 @@ wss.on('connection', (ws, req) => {
         clients.delete(clientId);
         console.log(`🔗 WebSocket отключен: ${clientId}`);
     });
+
+    ws.on('error', (error) => {
+        console.error(`WebSocket error ${clientId}:`, error);
+        clients.delete(clientId);
+    });
 });
 
 // 🔧 REAL-TIME ОБНОВЛЕНИЯ ЦЕН
@@ -627,25 +649,32 @@ async function broadcastPriceUpdates() {
     const symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT', 'MATICUSDT', 'SOLUSDT', 'AVAXUSDT', 'ATOMUSDT'];
     
     try {
+        const updates = [];
         for (const symbol of symbols) {
             const data = await fetchRealTimeData(symbol);
             if (data) {
-                const message = JSON.stringify({
-                    type: 'price_update',
-                    symbol: data.symbol,
-                    price: data.price,
-                    change24h: data.change24h,
-                    timestamp: Date.now()
-                });
-
-                clients.forEach((ws, clientId) => {
-                    if (ws.readyState === WebSocket.OPEN && 
-                        (!ws.subscriptions || ws.subscriptions.includes(symbol))) {
-                        ws.send(message);
-                    }
-                });
+                updates.push(data);
             }
         }
+
+        // Отправляем все обновления одним сообщением
+        const message = JSON.stringify({
+            type: 'price_updates',
+            data: updates,
+            timestamp: Date.now()
+        });
+
+        clients.forEach((ws, clientId) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                try {
+                    ws.send(message);
+                } catch (error) {
+                    console.error(`Ошибка отправки клиенту ${clientId}:`, error);
+                    clients.delete(clientId);
+                }
+            }
+        });
+
     } catch (error) {
         console.error('Ошибка broadcast:', error);
     }
@@ -667,29 +696,31 @@ app.post('/api/auth/register', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        db.run(
-            'INSERT INTO users (email, password, name) VALUES (?, ?, ?)',
-            [email, hashedPassword, name],
-            function(err) {
-                if (err) {
-                    if (err.message.includes('UNIQUE constraint failed')) {
-                        return res.status(400).json({ success: false, error: 'Пользователь уже существует' });
-                    }
-                    return res.status(500).json({ success: false, error: 'Ошибка сервера' });
-                }
-
-                const token = jwt.sign({ userId: this.lastID, email }, JWT_SECRET, { expiresIn: '24h' });
-                
-                res.json({
-                    success: true,
-                    message: 'Пользователь зарегистрирован',
-                    token,
-                    user: { id: this.lastID, email, name }
-                });
-            }
+        const result = await pool.query(
+            'INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING id, email, name, created_at',
+            [email, hashedPassword, name]
         );
+
+        const user = result.rows[0];
+        const token = jwt.sign({ userId: user.id, email }, JWT_SECRET, { expiresIn: '24h' });
+        
+        res.json({
+            success: true,
+            message: 'Пользователь успешно зарегистрирован',
+            token,
+            user: { 
+                id: user.id, 
+                email: user.email, 
+                name: user.name,
+                created_at: user.created_at
+            }
+        });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        if (error.code === '23505') {
+            return res.status(400).json({ success: false, error: 'Пользователь с таким email уже существует' });
+        }
+        console.error('Ошибка регистрации:', error);
+        res.status(500).json({ success: false, error: 'Внутренняя ошибка сервера' });
     }
 });
 
@@ -702,48 +733,74 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Email и пароль обязательны' });
         }
 
-        db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Ошибка сервера' });
-            }
-            
-            if (!user) {
-                return res.status(401).json({ success: false, error: 'Пользователь не найден' });
-            }
+        const result = await pool.query(
+            'SELECT * FROM users WHERE email = $1', 
+            [email]
+        );
+        const user = result.rows[0];
+        
+        if (!user) {
+            return res.status(401).json({ success: false, error: 'Пользователь не найден' });
+        }
 
-            const validPassword = await bcrypt.compare(password, user.password);
-            if (!validPassword) {
-                return res.status(401).json({ success: false, error: 'Неверный пароль' });
-            }
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(401).json({ success: false, error: 'Неверный пароль' });
+        }
 
-            const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
-            
-            res.json({
-                success: true,
-                message: 'Успешный вход',
-                token,
-                user: { id: user.id, email: user.email, name: user.name }
-            });
+        const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
+        
+        res.json({
+            success: true,
+            message: 'Успешный вход в систему',
+            token,
+            user: { 
+                id: user.id, 
+                email: user.email, 
+                name: user.name,
+                created_at: user.created_at
+            }
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Ошибка логина:', error);
+        res.status(500).json({ success: false, error: 'Внутренняя ошибка сервера' });
     }
 });
 
-// 🔧 РОУТЫ ПОРТФЕЛЯ (требуют аутентификации)
+// 🔧 РОУТЫ ПОРТФЕЛЯ
 
 // Получить портфель пользователя
-app.get('/api/portfolio', authenticateToken, (req, res) => {
-    db.all(
-        `SELECT * FROM portfolio WHERE user_id = ? ORDER BY created_at DESC`,
-        [req.user.userId],
-        (err, rows) => {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Ошибка базы данных' });
-            }
-            res.json({ success: true, data: rows });
-        }
-    );
+app.get('/api/portfolio', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT p.*, 
+                    (SELECT price FROM crypto_prices WHERE symbol = p.symbol ORDER BY timestamp DESC LIMIT 1) as current_price
+             FROM portfolio p 
+             WHERE user_id = $1 
+             ORDER BY created_at DESC`,
+            [req.user.userId]
+        );
+
+        const portfolioWithPrices = await Promise.all(
+            result.rows.map(async (item) => {
+                const currentData = await fetchRealTimeData(item.symbol);
+                const current_price = currentData ? currentData.price : item.buy_price;
+                
+                return {
+                    ...item,
+                    current_price: parseFloat(current_price),
+                    total_value: parseFloat(current_price) * parseFloat(item.amount),
+                    profit_loss: (parseFloat(current_price) - parseFloat(item.buy_price)) * parseFloat(item.amount),
+                    profit_loss_percent: ((parseFloat(current_price) - parseFloat(item.buy_price)) / parseFloat(item.buy_price)) * 100
+                };
+            })
+        );
+
+        res.json({ success: true, data: portfolioWithPrices });
+    } catch (error) {
+        console.error('Ошибка получения портфеля:', error);
+        res.status(500).json({ success: false, error: 'Ошибка получения портфеля' });
+    }
 });
 
 // Добавить актив в портфель
@@ -751,94 +808,150 @@ app.post('/api/portfolio', authenticateToken, async (req, res) => {
     try {
         const { symbol, name, amount, buy_price, target_price, stop_loss, buy_date, notes } = req.body;
         
+        if (!symbol || !name || !amount || !buy_price) {
+            return res.status(400).json({ success: false, error: 'Обязательные поля: symbol, name, amount, buy_price' });
+        }
+
         const currentData = await fetchRealTimeData(symbol);
         const current_price = currentData ? currentData.price : buy_price;
 
-        db.run(
+        const result = await pool.query(
             `INSERT INTO portfolio (user_id, symbol, name, amount, buy_price, target_price, stop_loss, buy_date, notes) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.user.userId, symbol, name, amount, buy_price, target_price, stop_loss, buy_date, notes],
-            function(err) {
-                if (err) {
-                    return res.status(500).json({ success: false, error: 'Ошибка сохранения' });
-                }
-
-                const portfolioItem = {
-                    id: this.lastID,
-                    user_id: req.user.userId,
-                    symbol,
-                    name,
-                    amount,
-                    buy_price,
-                    target_price,
-                    stop_loss,
-                    buy_date,
-                    notes,
-                    current_price,
-                    total_value: current_price * amount,
-                    profit_loss: (current_price - buy_price) * amount,
-                    profit_loss_percent: ((current_price - buy_price) / buy_price) * 100
-                };
-
-                res.json({
-                    success: true,
-                    message: 'Актив добавлен в портфель',
-                    data: portfolioItem
-                });
-            }
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+             RETURNING *`,
+            [req.user.userId, symbol, name, amount, buy_price, target_price, stop_loss, buy_date, notes]
         );
+
+        const portfolioItem = {
+            ...result.rows[0],
+            current_price: parseFloat(current_price),
+            total_value: parseFloat(current_price) * parseFloat(amount),
+            profit_loss: (parseFloat(current_price) - parseFloat(buy_price)) * parseFloat(amount),
+            profit_loss_percent: ((parseFloat(current_price) - parseFloat(buy_price)) / parseFloat(buy_price)) * 100
+        };
+
+        res.json({
+            success: true,
+            message: 'Актив успешно добавлен в портфель',
+            data: portfolioItem
+        });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Ошибка добавления в портфель:', error);
+        res.status(500).json({ success: false, error: 'Ошибка добавления актива' });
+    }
+});
+
+// Обновить актив в портфеле
+app.put('/api/portfolio/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { target_price, stop_loss, notes } = req.body;
+
+        const result = await pool.query(
+            `UPDATE portfolio 
+             SET target_price = $1, stop_loss = $2, notes = $3 
+             WHERE id = $4 AND user_id = $5 
+             RETURNING *`,
+            [target_price, stop_loss, notes, id, req.user.userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Актив не найден' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Актив успешно обновлен',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка обновления портфеля:', error);
+        res.status(500).json({ success: false, error: 'Ошибка обновления актива' });
     }
 });
 
 // Удалить актив из портфеля
-app.delete('/api/portfolio/:id', authenticateToken, (req, res) => {
-    db.run(
-        'DELETE FROM portfolio WHERE id = ? AND user_id = ?',
-        [req.params.id, req.user.userId],
-        function(err) {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Ошибка удаления' });
-            }
-            res.json({ success: true, message: 'Актив удален из портфеля' });
+app.delete('/api/portfolio/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await pool.query(
+            'DELETE FROM portfolio WHERE id = $1 AND user_id = $2 RETURNING id',
+            [id, req.user.userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Актив не найден' });
         }
-    );
+
+        res.json({ 
+            success: true, 
+            message: 'Актив успешно удален из портфеля' 
+        });
+    } catch (error) {
+        console.error('Ошибка удаления из портфеля:', error);
+        res.status(500).json({ success: false, error: 'Ошибка удаления актива' });
+    }
 });
 
 // 🔧 РОУТЫ СИГНАЛОВ И ИСТОРИИ
 
 // Получить историю сигналов
-app.get('/api/signals/history', authenticateToken, (req, res) => {
-    const limit = parseInt(req.query.limit) || 50;
-    
-    db.all(
-        `SELECT * FROM signals_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?`,
-        [req.user.userId, limit],
-        (err, rows) => {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Ошибка базы данных' });
+app.get('/api/signals/history', authenticateToken, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = parseInt(req.query.offset) || 0;
+
+        const result = await pool.query(
+            `SELECT * FROM signals_history 
+             WHERE user_id = $1 
+             ORDER BY timestamp DESC 
+             LIMIT $2 OFFSET $3`,
+            [req.user.userId, limit, offset]
+        );
+
+        const countResult = await pool.query(
+            'SELECT COUNT(*) FROM signals_history WHERE user_id = $1',
+            [req.user.userId]
+        );
+
+        res.json({ 
+            success: true, 
+            data: result.rows,
+            pagination: {
+                total: parseInt(countResult.rows[0].count),
+                limit,
+                offset
             }
-            res.json({ success: true, data: rows });
-        }
-    );
+        });
+    } catch (error) {
+        console.error('Ошибка получения истории сигналов:', error);
+        res.status(500).json({ success: false, error: 'Ошибка получения истории' });
+    }
 });
 
 // Сохранить сигнал в историю
-app.post('/api/signals/history', authenticateToken, (req, res) => {
-    const { symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit } = req.body;
-    
-    db.run(
-        `INSERT INTO signals_history (user_id, symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.userId, symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit],
-        function(err) {
-            if (err) {
-                return res.status(500).json({ success: false, error: 'Ошибка сохранения' });
-            }
-            res.json({ success: true, message: 'Сигнал сохранен в историю' });
-        }
-    );
+app.post('/api/signals/history', authenticateToken, async (req, res) => {
+    try {
+        const { symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit } = req.body;
+        
+        const queryResult = await pool.query(
+            `INSERT INTO signals_history 
+             (user_id, symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+             RETURNING *`,
+            [req.user.userId, symbol, name, action, entry_price, target_price, stop_loss, confidence, result, actual_profit]
+        );
+
+        res.json({
+            success: true,
+            message: 'Сигнал успешно сохранен в историю',
+            data: queryResult.rows[0]
+        });
+    } catch (error) {
+        console.error('Ошибка сохранения сигнала:', error);
+        res.status(500).json({ success: false, error: 'Ошибка сохранения сигнала' });
+    }
 });
 
 // 🔧 РЕАЛЬНЫЕ ДАННЫЕ BINANCE API
@@ -856,7 +969,8 @@ async function fetchRealTimeData(symbol) {
                 volume: parseFloat(data.volume),
                 high: parseFloat(data.highPrice),
                 low: parseFloat(data.lowPrice),
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                isReal: true
             };
         }
     } catch (error) {
@@ -873,19 +987,35 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.get('/api/status', (req, res) => {
-    res.json({
-        success: true,
-        message: 'CryptoSignal API работает с реальными данными ✅',
-        version: '2.0.0',
-        features: ['real-time', 'authentication', 'database', 'websocket'],
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        clients: clients.size
-    });
+app.get('/api/status', async (req, res) => {
+    try {
+        const dbResult = await pool.query('SELECT NOW() as time');
+        const dbTime = dbResult.rows[0].time;
+
+        res.json({
+            success: true,
+            message: 'CryptoSignal API работает с реальными данными ✅',
+            version: '2.0.0',
+            features: ['real-time', 'authentication', 'postgresql', 'websocket'],
+            timestamp: new Date().toISOString(),
+            database: {
+                connected: true,
+                time: dbTime
+            },
+            uptime: process.uptime(),
+            clients: clients.size,
+            cache_size: cache.size
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка подключения к базе данных',
+            message: error.message
+        });
+    }
 });
 
-// 🔧 REAL-TIME DATA ENDPOINT
+// Получить реальные данные по символу
 app.get('/api/realtime/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -897,12 +1027,13 @@ app.get('/api/realtime/:symbol', async (req, res) => {
             timestamp: new Date().toISOString()
         });
     } catch (error) {
+        console.error('Ошибка real-time данных:', error);
         const demoData = generateDemoTickerData(req.params.symbol);
         res.json({ success: true, data: demoData, isDemo: true });
     }
 });
 
-// 🔧 ИСТОРИЧЕСКИЕ ДАННЫЕ
+// Получить исторические данные
 app.get('/api/history/:symbol', async (req, res) => {
     try {
         const { symbol } = req.params;
@@ -935,8 +1066,33 @@ app.get('/api/history/:symbol', async (req, res) => {
             res.json({ success: true, data: demoHistory, isDemo: true });
         }
     } catch (error) {
+        console.error('Ошибка исторических данных:', error);
         const demoHistory = generateDemoHistory(req.params.symbol, 100);
         res.json({ success: true, data: demoHistory, isDemo: true });
+    }
+});
+
+// Получить данные для нескольких символов сразу
+app.get('/api/multi-ticker', async (req, res) => {
+    try {
+        const symbols = req.query.symbols ? req.query.symbols.split(',') : ['BTCUSDT', 'ETHUSDT'];
+        const data = [];
+
+        for (const symbol of symbols) {
+            const tickerData = await fetchRealTimeData(symbol);
+            if (tickerData) {
+                data.push(tickerData);
+            }
+        }
+
+        res.json({
+            success: true,
+            data: data,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Ошибка multi-ticker:', error);
+        res.status(500).json({ success: false, error: 'Ошибка получения данных' });
     }
 });
 
@@ -991,12 +1147,19 @@ function generateDemoHistory(symbol, limit) {
 }
 
 // 🔧 WebSocket UPGRADE
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 CryptoSignal Server запущен!`);
-    console.log(`📡 Порт: ${PORT}`);
-    console.log(`🌐 Режим: ${process.env.NODE_ENV || 'production'}`);
-    console.log(`🔗 WebSocket: ws://localhost:${PORT}`);
-    console.log(`🕒 Время: ${new Date().toISOString()}`);
+const server = app.listen(PORT, '0.0.0.0', async () => {
+    try {
+        await initializeDatabase();
+        console.log(`🚀 CryptoSignal Server запущен!`);
+        console.log(`📡 Порт: ${PORT}`);
+        console.log(`🌐 Режим: ${process.env.NODE_ENV || 'production'}`);
+        console.log(`🗄️ База: PostgreSQL (Render)`);
+        console.log(`🔗 WebSocket: ws://localhost:${PORT}`);
+        console.log(`🕒 Время: ${new Date().toISOString()}`);
+    } catch (error) {
+        console.error('❌ Ошибка запуска сервера:', error);
+        process.exit(1);
+    }
 });
 
 server.on('upgrade', (request, socket, head) => {
@@ -1005,7 +1168,7 @@ server.on('upgrade', (request, socket, head) => {
     });
 });
 
-// 🔧 ОЧИСТКА КЭША
+// 🔧 ОЧИСТКА КЭША И УПРАВЛЕНИЕ ПАМЯТЬЮ
 setInterval(() => {
     const now = Date.now();
     let cleared = 0;
@@ -1021,3 +1184,19 @@ setInterval(() => {
         console.log(`🧹 Очищено ${cleared} записей кэша`);
     }
 }, 60000);
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('🛑 Получен SIGTERM, завершаем работу...');
+    server.close(() => {
+        console.log('✅ HTTP сервер остановлен');
+    });
+    
+    wss.close(() => {
+        console.log('✅ WebSocket сервер остановлен');
+    });
+    
+    await pool.end();
+    console.log('✅ PostgreSQL пул соединений закрыт');
+    process.exit(0);
+});
