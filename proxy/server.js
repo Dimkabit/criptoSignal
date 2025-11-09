@@ -456,6 +456,32 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+
+// 🔧 ЭНДПОИНТ ДЛЯ ПОРТФЕЛЯ (заглушки)
+app.get('/api/portfolio/:userId', (req, res) => {
+  res.json({
+    success: true,
+    data: [],
+    message: 'Portfolio API - в разработке'
+  });
+});
+
+// 🔧 ЭНДПОИНТ ДЛЯ ИСТОРИИ СИГНАЛОВ (заглушка)
+app.get('/tables/signals_history', (req, res) => {
+  res.json({
+    success: true,
+    data: [],
+    message: 'Signals history - в разработке'
+  });
+});
+
+app.post('/tables/signals_history', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Signal saved - в разработке'
+  });
+});
+
 // 🔧 ОЧИСТКА КЭША
 setInterval(() => {
     const now = Date.now();

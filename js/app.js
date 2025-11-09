@@ -580,9 +580,12 @@ class CryptoSignal {
 // Замените существующую fetchCryptoData на этот код
 async fetchCryptoData(symbol) {
   try {
-    // Используем ваш прокси-сервер вместо прямого запроса к CoinGecko
     const baseUrl = window.location.origin;
-    const response = await fetch(`${baseUrl}/api/ticker/${symbol}`);
+    console.log(`📡 Запрос данных для ${symbol} через ${baseUrl}`);
+    
+    const response = await fetch(`${baseUrl}/api/ticker/${symbol}`, {
+      timeout: 5000
+    });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -591,12 +594,11 @@ async fetchCryptoData(symbol) {
     const result = await response.json();
     
     if (!result.success) {
-      throw new Error('API returned error');
+      throw new Error('API returned error: ' + (result.message || 'Unknown error'));
     }
     
     const data = result.data;
     
-    // Преобразуем данные Binance в нужный формат
     return {
       symbol: symbol,
       price: parseFloat(data.lastPrice),
@@ -608,9 +610,9 @@ async fetchCryptoData(symbol) {
     };
     
   } catch (err) {
-    console.error('Ошибка получения данных для', symbol, err);
+    console.warn(`⚠️ Ошибка получения данных для ${symbol}:`, err.message);
+    console.log(`🔄 Используем демо-данные для ${symbol}`);
     
-    // 🔧 РЕЗЕРВНЫЕ ДЕМО-ДАННЫЕ ПРИ ОШИБКЕ
     return this.generateDemoData(symbol);
   }
 }
