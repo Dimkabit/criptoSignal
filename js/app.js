@@ -1197,6 +1197,253 @@
 
 
 // app.js
+
+// 🔐 Auth Manager
+class AuthManager {
+    constructor() {
+        this.currentUser = null;
+        this.token = localStorage.getItem('authToken');
+        this.init();
+    }
+
+    init() {
+        this.setupEventListeners();
+        this.checkAuthStatus();
+    }
+
+    setupEventListeners() {
+        // Tab switching
+        document.getElementById('loginTab').addEventListener('click', () => this.switchTab('login'));
+        document.getElementById('registerTab').addEventListener('click', () => this.switchTab('register'));
+        
+        // Forms
+        document.getElementById('loginForm').addEventListener('submit', (e) => this.handleLogin(e));
+        document.getElementById('registerForm').addEventListener('submit', (e) => this.handleRegister(e));
+        
+        // Demo mode
+        document.getElementById('demoMode').addEventListener('click', () => this.enterDemoMode());
+        
+        // User menu
+        document.getElementById('userInfo').addEventListener('click', () => this.toggleUserMenu());
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+        
+        // Close user menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#userInfo') && !e.target.closest('#userMenu')) {
+                document.getElementById('userMenu').classList.add('hidden');
+            }
+        });
+    }
+
+    switchTab(tab) {
+        const loginTab = document.getElementById('loginTab');
+        const registerTab = document.getElementById('registerTab');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+
+        if (tab === 'login') {
+            loginTab.classList.add('text-blue-400', 'border-b-2', 'border-blue-400');
+            loginTab.classList.remove('text-gray-400');
+            registerTab.classList.add('text-gray-400');
+            registerTab.classList.remove('text-blue-400', 'border-b-2', 'border-blue-400');
+            loginForm.classList.remove('hidden');
+            registerForm.classList.add('hidden');
+        } else {
+            registerTab.classList.add('text-blue-400', 'border-b-2', 'border-blue-400');
+            registerTab.classList.remove('text-gray-400');
+            loginTab.classList.add('text-gray-400');
+            loginTab.classList.remove('text-blue-400', 'border-b-2', 'border-blue-400');
+            registerForm.classList.remove('hidden');
+            loginForm.classList.add('hidden');
+        }
+    }
+
+    async handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.setUser(result.user, result.token);
+                this.hideAuthModal();
+                this.showNotification('Успешный вход!', 'success');
+            } else {
+                this.showNotification(result.error || 'Ошибка входа', 'error');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            this.showNotification('Ошибка соединения', 'error');
+        }
+    }
+
+    async handleRegister(e) {
+        e.preventDefault();
+        const name = document.getElementById('registerName').value;
+        const email = document.getElementById('registerEmail').value;
+        const password = document.getElementById('registerPassword').value;
+
+        try {
+            const response = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.setUser(result.user, result.token);
+                this.hideAuthModal();
+                this.showNotification('Регистрация успешна!', 'success');
+            } else {
+                this.showNotification(result.error || 'Ошибка регистрации', 'error');
+            }
+        } catch (error) {
+            console.error('Register error:', error);
+            this.showNotification('Ошибка соединения', 'error');
+        }
+    }
+
+    enterDemoMode() {
+        const demoUser = {
+            id: 'demo_' + Date.now(),
+            name: 'Демо Пользователь',
+            email: 'demo@cryptosignal.com',
+            demo: true
+        };
+        
+        this.setUser(demoUser, null);
+        this.hideAuthModal();
+        this.showNotification('Демо-режим активирован!', 'info');
+    }
+
+    setUser(user, token) {
+        this.currentUser = user;
+        
+        if (token) {
+            this.token = token;
+            localStorage.setItem('authToken', token);
+        } else {
+            this.token = null;
+            localStorage.removeItem('authToken');
+        }
+
+        this.updateUI();
+        
+        // Notify CryptoSignal about auth change
+        if (window.cryptoSignal) {
+            window.cryptoSignal.onAuthChange(user);
+        }
+    }
+
+    updateUI() {
+        const userDisplay = document.getElementById('userDisplay');
+        const userInfo = document.getElementById('userInfo');
+        const authModal = document.getElementById('authModal');
+
+        if (this.currentUser) {
+            userDisplay.textContent = this.currentUser.name || this.currentUser.email;
+            userInfo.classList.remove('glass');
+            userInfo.classList.add('user-avatar');
+            
+            if (this.currentUser.demo) {
+                userInfo.innerHTML = `
+                    <div class="w-8 h-8 demo-badge rounded-full flex items-center justify-center">
+                        <i class="fas fa-play text-white text-sm"></i>
+                    </div>
+                    <span class="text-sm">Демо</span>
+                `;
+            }
+            
+            authModal.classList.add('hidden');
+        } else {
+            userDisplay.textContent = 'Войти';
+            userInfo.classList.add('glass');
+            userInfo.classList.remove('user-avatar');
+            authModal.classList.remove('hidden');
+        }
+    }
+
+    checkAuthStatus() {
+        if (this.token) {
+            // Verify token and get user data
+            this.verifyToken();
+        } else {
+            this.updateUI();
+        }
+    }
+
+    async verifyToken() {
+        // In a real app, you'd verify the token with the server
+        // For demo, we'll just show the auth modal
+        this.updateUI();
+    }
+
+    logout() {
+        this.currentUser = null;
+        this.token = null;
+        localStorage.removeItem('authToken');
+        this.updateUI();
+        this.showNotification('Вы вышли из системы', 'info');
+        document.getElementById('userMenu').classList.add('hidden');
+    }
+
+    toggleUserMenu() {
+        if (this.currentUser) {
+            const menu = document.getElementById('userMenu');
+            menu.classList.toggle('hidden');
+            
+            // Update user info in menu
+            if (this.currentUser) {
+                document.getElementById('userName').textContent = this.currentUser.name || 'Пользователь';
+                document.getElementById('userEmail').textContent = this.currentUser.email;
+            }
+        } else {
+            document.getElementById('authModal').classList.remove('hidden');
+        }
+    }
+
+    hideAuthModal() {
+        document.getElementById('authModal').classList.add('hidden');
+    }
+
+    showNotification(message, type = 'info') {
+        // Use existing notification system or create a simple one
+        if (window.cryptoSignal && window.cryptoSignal.showNotification) {
+            window.cryptoSignal.showNotification(message, type);
+        } else {
+            alert(message);
+        }
+    }
+
+    getAuthToken() {
+        return this.token;
+    }
+
+    getCurrentUser() {
+        return this.currentUser;
+    }
+}
+
+// Initialize Auth Manager when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    window.authManager = new AuthManager();
+    
+    // Initialize CryptoSignal after auth
+    window.cryptoSignal = new CryptoSignal();
+});
+
+
+
 class PortfolioManager {
     constructor(api) {
         this.api = api;
