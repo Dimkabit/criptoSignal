@@ -237,12 +237,21 @@ app.use((error, req, res, next) => {
     });
 });
 
+// Keep-alive ping для Render
+const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+
+setInterval(() => {
+    axios.get(`${KEEP_ALIVE_URL}/api/status`)
+        .then(() => console.log(`[PING] Сервер активен — ${new Date().toISOString()}`))
+        .catch(err => console.warn(`[PING] Не удалось отправить ping: ${err.message}`));
+}, 14 * 60 * 1000); // каждые 14 минут
+
 // Запуск сервера
 app.listen(PORT, () => {
     console.log(`🚀 Прокси-сервер Binance API запущен`);
     console.log(`📡 Порт: ${PORT}`);
     console.log(`🌐 CORS: включен для всех источников`);
-    console.log(`💾 Кэширование: ${CACHE_DURATION/1000} секунд`);
+    console.log(`💾 Кэширование: ${CACHE_DURATION / 1000} секунд`);
     console.log('');
     console.log('📋 Доступные эндпоинты:');
     console.log(`  GET  /api/status        - Статус сервера`);
@@ -251,14 +260,3 @@ app.listen(PORT, () => {
     console.log(`  POST /api/prices        - Цены для нескольких символов`);
     console.log(`  GET  /api/history/:symbol?interval=1h&limit=24 - Исторические данные`);
 });
-
-
-
-// Keep-alive ping для Render, чтобы сервер не засыпал
-const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-
-setInterval(() => {
-    axios.get(`${KEEP_ALIVE_URL}/api/status`)
-        .then(() => console.log(`[PING] Сервер активен — ${new Date().toISOString()}`))
-        .catch(err => console.warn(`[PING] Не удалось отправить ping: ${err.message}`));
-}, 14 * 60 * 1000); // каждые 14 минут
