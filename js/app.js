@@ -566,48 +566,40 @@ class CryptoSignal {
 
 // Замените существующую fetchCryptoData на этот код
 async fetchCryptoData(symbol) {
-    try {
-        // Маппинг для CoinGecko ids
-        const coinId = this.getCoinGeckoId(symbol);
-        if (!coinId) {
-            console.warn('No coingecko id for', symbol);
-            return this.generateDemoData(symbol);
-        }
-
-        // Используем /simple/price для скорости и CORS-дружелюбности
-        // include_24hr_change и market_cap - позволяют получить базовые метрики
-        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coinId)}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`;
-        const resp = await fetch(url);
-        if (resp.ok) {
-            const json = await resp.json();
-            const info = json[coinId];
-            if (info && info.usd) {
-                const price = Number(info.usd);
-                const change24h = Number(info.usd_24h_change) || 0;
-                const volume = Number(info.usd_24h_vol) || (Math.random() * 1000000);
-                // приближённые high/low (не точные OHLC, но для UI годятся)
-                const high = price * (1 + Math.abs(change24h) / 100 * 0.6);
-                const low = price * (1 - Math.abs(change24h) / 100 * 0.6);
-
-                return {
-                    symbol: symbol,
-                    price,
-                    change24h,
-                    volume,
-                    high,
-                    low,
-                    timestamp: Date.now()
-                };
-            }
-        }
-
-        console.warn('CoinGecko returned non-ok for', symbol);
-        return this.generateDemoData(symbol);
-
-    } catch (err) {
-        console.error('Ошибка получения данных для', symbol, err);
-        return this.generateDemoData(symbol);
+  try {
+    // Используем ваш прокси-сервер вместо прямого запроса к CoinGecko
+    const baseUrl = window.location.origin;
+    const response = await fetch(`${baseUrl}/api/ticker/${symbol}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error('API returned error');
+    }
+    
+    const data = result.data;
+    
+    // Преобразуем данные Binance в нужный формат
+    return {
+      symbol: symbol,
+      price: parseFloat(data.lastPrice),
+      change24h: parseFloat(data.priceChangePercent),
+      volume: parseFloat(data.volume),
+      high: parseFloat(data.highPrice),
+      low: parseFloat(data.lowPrice),
+      timestamp: Date.now()
+    };
+    
+  } catch (err) {
+    console.error('Ошибка получения данных для', symbol, err);
+    
+    // 🔧 РЕЗЕРВНЫЕ ДЕМО-ДАННЫЕ ПРИ ОШИБКЕ
+    return this.generateDemoData(symbol);
+  }
 }
 
 
@@ -626,22 +618,33 @@ async fetchCryptoData(symbol) {
     }
 
     generateDemoData(symbol) {
-        // Генерация реалистичных демо-данных для тестирования
-        const basePrice = this.getBasePrice(symbol);
-        const volatility = 0.02; // 2% волатильность
-        const change = (Math.random() - 0.5) * volatility * 100;
-        const currentPrice = basePrice * (1 + change / 100);
-        
-        return {
-            symbol: symbol,
-            price: currentPrice,
-            change24h: change,
-            volume: Math.random() * 1000000 + 100000,
-            high: currentPrice * (1 + Math.random() * 0.05),
-            low: currentPrice * (1 - Math.random() * 0.05),
-            timestamp: Date.now()
-        };
-    }
+  const basePrices = {
+    'BTCUSDT': 45000,
+    'ETHUSDT': 3000,
+    'ADAUSDT': 0.5,
+    'DOTUSDT': 10,
+    'MATICUSDT': 1,
+    'SOLUSDT': 100,
+    'AVAXUSDT': 50,
+    'ATOMUSDT': 15
+  };
+  
+  const basePrice = basePrices[symbol] || 1;
+  const volatility = 0.02;
+  const change = (Math.random() - 0.5) * volatility * 100;
+  const currentPrice = basePrice * (1 + change / 100);
+  
+  return {
+    symbol: symbol,
+    price: currentPrice,
+    change24h: change,
+    volume: Math.random() * 1000000 + 100000,
+    high: currentPrice * (1 + Math.random() * 0.05),
+    low: currentPrice * (1 - Math.random() * 0.05),
+    timestamp: Date.now(),
+    isDemo: true // 🔧 ФЛАГ ДЛЯ ДЕМО-ДАННЫХ
+  };
+}
 
     getBasePrice(symbol) {
         const basePrices = {
