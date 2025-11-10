@@ -319,132 +319,7 @@ class PortfolioManager {
         });
     }
 
-            setupQuickTrading() {
-        this.quickTrades = {
-            enabled: false,
-            amount: 10, // USDT
-            maxQuickTrades: 3,
-            cooldown: 30000 // 30 секунд
-        };
-        
-        this.setupQuickTradeButtons();
-    }
 
-    setupQuickTradeButtons() {
-        // Быстрые кнопки для скальпинга
-        const quickTradeHTML = `
-            <div class="quick-trade-panel glass rounded-xl p-4 mb-6">
-                <h4 class="text-lg font-bold mb-3 flex items-center">
-                    <i class="fas fa-bolt text-yellow-400 mr-2"></i>
-                    Быстрые сделки
-                </h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <button class="quick-buy-btn bg-green-600 hover:bg-green-700 py-2 px-3 rounded-lg text-sm transition-colors">
-                        🟢 Быстрая покупка
-                    </button>
-                    <button class="quick-sell-btn bg-red-600 hover:bg-red-700 py-2 px-3 rounded-lg text-sm transition-colors">
-                        🔴 Быстрая продажа
-                    </button>
-                    <button class="scalp-buy-btn bg-blue-600 hover:bg-blue-700 py-2 px-3 rounded-lg text-sm transition-colors">
-                        ⚡ Скальпинг лонг
-                    </button>
-                    <button class="scalp-sell-btn bg-purple-600 hover:bg-purple-700 py-2 px-3 rounded-lg text-sm transition-colors">
-                        ⚡ Скальпинг шорт
-                    </button>
-                </div>
-                <div class="mt-3 flex space-x-3">
-                    <select id="quickAmount" class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm">
-                        <option value="5">$5</option>
-                        <option value="10" selected>$10</option>
-                        <option value="25">$25</option>
-                        <option value="50">$50</option>
-                    </select>
-                    <select id="quickSymbol" class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm">
-                        <option value="BTCUSDT">BTC</option>
-                        <option value="ETHUSDT">ETH</option>
-                        <option value="SOLUSDT">SOL</option>
-                        <option value="AVAXUSDT">AVAX</option>
-                    </select>
-                </div>
-            </div>
-        `;
-        
-        const signalsSection = document.querySelector('#signalsContainer').parentElement;
-        signalsSection.insertAdjacentHTML('afterbegin', quickTradeHTML);
-        
-        this.setupQuickTradeHandlers();
-    }
-
-    setupQuickTradeHandlers() {
-        // Обработчики для быстрых сделок
-        document.querySelector('.quick-buy-btn').addEventListener('click', () => {
-            this.executeQuickTrade('BUY');
-        });
-        
-        document.querySelector('.quick-sell-btn').addEventListener('click', () => {
-            this.executeQuickTrade('SELL');
-        });
-        
-        document.querySelector('.scalp-buy-btn').addEventListener('click', () => {
-            this.executeScalpTrade('BUY');
-        });
-        
-        document.querySelector('.scalp-sell-btn').addEventListener('click', () => {
-            this.executeScalpTrade('SELL');
-        });
-    }
-
-    async executeQuickTrade(action) {
-        const symbol = document.getElementById('quickSymbol').value;
-        const amount = parseFloat(document.getElementById('quickAmount').value);
-        
-        const marketData = this.marketData.get(symbol);
-        if (!marketData) {
-            this.showNotification('Нет данных по выбранной паре', 'error');
-            return;
-        }
-        
-        const signal = {
-            id: 'quick_' + Date.now(),
-            symbol: symbol,
-            name: this.getCryptoName(symbol),
-            action: action,
-            price: marketData.price,
-            amount: amount / marketData.price,
-            timestamp: Date.now(),
-            type: 'QUICK_TRADE'
-        };
-        
-        this.showNotification(`${action} ${symbol} на $${amount}`, 'success');
-        await this.saveSignalToHistory(signal);
-        
-        // Имитация быстрой сделки
-        setTimeout(() => {
-            const profit = (Math.random() - 0.3) * amount * 0.1; // -30% to +70%
-            this.showNotification(
-                `Сделка закрыта: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`, 
-                profit >= 0 ? 'success' : 'warning'
-            );
-        }, 2000);
-    }
-
-    async executeScalpTrade(action) {
-        const symbol = document.getElementById('quickSymbol').value;
-        const amount = parseFloat(document.getElementById('quickAmount').value);
-        
-        this.showNotification(`⚡ Скальпинг ${symbol}...`, 'info');
-        
-        // Имитация скальпинговой сделки
-        for (let i = 0; i < 3; i++) {
-            setTimeout(() => {
-                const profit = (Math.random() * 0.5) * amount * 0.05; // 0-2.5%
-                this.showNotification(
-                    `Скальп #${i + 1}: +$${profit.toFixed(2)}`, 
-                    'success'
-                );
-            }, (i + 1) * 1000);
-        }
-    }
 
     showAddAssetModal() {
         document.getElementById('assetBuyDate').value = new Date().toISOString().split('T')[0];
@@ -945,6 +820,134 @@ class CryptoSignal {
             }
         } else {
             this.showNotification('Браузер не поддерживает уведомления', 'error');
+        }
+    }
+
+
+                setupQuickTrading() {
+        this.quickTrades = {
+            enabled: false,
+            amount: 10, // USDT
+            maxQuickTrades: 3,
+            cooldown: 30000 // 30 секунд
+        };
+        
+        this.setupQuickTradeButtons();
+    }
+
+    setupQuickTradeButtons() {
+        // Быстрые кнопки для скальпинга
+        const quickTradeHTML = `
+            <div class="quick-trade-panel glass rounded-xl p-4 mb-6">
+                <h4 class="text-lg font-bold mb-3 flex items-center">
+                    <i class="fas fa-bolt text-yellow-400 mr-2"></i>
+                    Быстрые сделки
+                </h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button class="quick-buy-btn bg-green-600 hover:bg-green-700 py-2 px-3 rounded-lg text-sm transition-colors">
+                        🟢 Быстрая покупка
+                    </button>
+                    <button class="quick-sell-btn bg-red-600 hover:bg-red-700 py-2 px-3 rounded-lg text-sm transition-colors">
+                        🔴 Быстрая продажа
+                    </button>
+                    <button class="scalp-buy-btn bg-blue-600 hover:bg-blue-700 py-2 px-3 rounded-lg text-sm transition-colors">
+                        ⚡ Скальпинг лонг
+                    </button>
+                    <button class="scalp-sell-btn bg-purple-600 hover:bg-purple-700 py-2 px-3 rounded-lg text-sm transition-colors">
+                        ⚡ Скальпинг шорт
+                    </button>
+                </div>
+                <div class="mt-3 flex space-x-3">
+                    <select id="quickAmount" class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm">
+                        <option value="5">$5</option>
+                        <option value="10" selected>$10</option>
+                        <option value="25">$25</option>
+                        <option value="50">$50</option>
+                    </select>
+                    <select id="quickSymbol" class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm">
+                        <option value="BTCUSDT">BTC</option>
+                        <option value="ETHUSDT">ETH</option>
+                        <option value="SOLUSDT">SOL</option>
+                        <option value="AVAXUSDT">AVAX</option>
+                    </select>
+                </div>
+            </div>
+        `;
+        
+        const signalsSection = document.querySelector('#signalsContainer').parentElement;
+        signalsSection.insertAdjacentHTML('afterbegin', quickTradeHTML);
+        
+        this.setupQuickTradeHandlers();
+    }
+
+    setupQuickTradeHandlers() {
+        // Обработчики для быстрых сделок
+        document.querySelector('.quick-buy-btn').addEventListener('click', () => {
+            this.executeQuickTrade('BUY');
+        });
+        
+        document.querySelector('.quick-sell-btn').addEventListener('click', () => {
+            this.executeQuickTrade('SELL');
+        });
+        
+        document.querySelector('.scalp-buy-btn').addEventListener('click', () => {
+            this.executeScalpTrade('BUY');
+        });
+        
+        document.querySelector('.scalp-sell-btn').addEventListener('click', () => {
+            this.executeScalpTrade('SELL');
+        });
+    }
+
+    async executeQuickTrade(action) {
+        const symbol = document.getElementById('quickSymbol').value;
+        const amount = parseFloat(document.getElementById('quickAmount').value);
+        
+        const marketData = this.marketData.get(symbol);
+        if (!marketData) {
+            this.showNotification('Нет данных по выбранной паре', 'error');
+            return;
+        }
+        
+        const signal = {
+            id: 'quick_' + Date.now(),
+            symbol: symbol,
+            name: this.getCryptoName(symbol),
+            action: action,
+            price: marketData.price,
+            amount: amount / marketData.price,
+            timestamp: Date.now(),
+            type: 'QUICK_TRADE'
+        };
+        
+        this.showNotification(`${action} ${symbol} на $${amount}`, 'success');
+        await this.saveSignalToHistory(signal);
+        
+        // Имитация быстрой сделки
+        setTimeout(() => {
+            const profit = (Math.random() - 0.3) * amount * 0.1; // -30% to +70%
+            this.showNotification(
+                `Сделка закрыта: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`, 
+                profit >= 0 ? 'success' : 'warning'
+            );
+        }, 2000);
+    }
+
+    async executeScalpTrade(action) {
+        const symbol = document.getElementById('quickSymbol').value;
+        const amount = parseFloat(document.getElementById('quickAmount').value);
+        
+        this.showNotification(`⚡ Скальпинг ${symbol}...`, 'info');
+        
+        // Имитация скальпинговой сделки
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+                const profit = (Math.random() * 0.5) * amount * 0.05; // 0-2.5%
+                this.showNotification(
+                    `Скальп #${i + 1}: +$${profit.toFixed(2)}`, 
+                    'success'
+                );
+            }, (i + 1) * 1000);
         }
     }
 
