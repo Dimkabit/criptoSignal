@@ -177,15 +177,30 @@
 
         <!-- Chart Section -->
         <section class="mb-8">
-            <div class="glass rounded-xl p-6">
-                <h3 class="text-xl font-bold mb-4 flex items-center">
+            <div class="glass rounded-xl p-6 mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold flex items-center">
                     <i class="fas fa-chart-candlestick mr-3 text-indigo-400"></i>
                     Анализ рынка
                 </h3>
-                <div class="h-96">
-                    <canvas id="marketChart"></canvas>
-                </div>
+               <select id="chartSymbol" class="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="ADAUSDT">ADA/USDT</option>
+                    <option value="DOTUSDT">DOT/USDT</option>
+                    <option value="MATICUSDT">MATIC/USDT</option>
+                    <option value="SOLUSDT">SOL/USDT</option>
+                    <option value="AVAXUSDT">AVAX/USDT</option>
+                    <option value="ATOMUSDT">ATOM/USDT</option>
+                    <option value="LINKUSDT">LINK/USDT</option>
+                    <option value="XRPUSDT">XRP/USDT</option>
+                    <option value="DOGEUSDT">DOGE/USDT</option>
+                </select>
             </div>
+            <div class="h-96">
+                <canvas id="marketChart"></canvas>
+            </div>
+        </div>
         </section>
 
         <!-- Settings -->
